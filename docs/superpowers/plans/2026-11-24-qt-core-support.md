@@ -59,10 +59,10 @@ Files: `include/nlohmann/QtJsonStrict.hpp`, Qt error header, `json.hpp`, Qt test
 
 Interfaces: `get_strict<T>()`, `get_to_strict(T&)`, `read_required<T>(QString)`, `value_strict<T>(QString,T)`; `qt_error` retains category and Pointer。
 
-- [ ] 用例验证整数上下界、符号、1.0、1.5、2^53+1、2^53+2、double/float 精度、NaN/Infinity、嵌套路径、缺失/null/非法值区别。
-- [ ] 对数值实现不依赖 long double 精度的范围/往返检查；对 Qt 容器递归调用严格读取；不支持目标编译期诊断。
-- [ ] 验证失败保留 get_to_strict 输出，普通 get 回归不变；生成头文件。
-- [ ] 更新记录并提交：`feat: 增加严格转换和字段读取接口`。
+- [x] 用例验证整数上下界、符号、1.0、1.5、2^53+1、2^53+2、double/float 精度、NaN/Infinity、嵌套路径、缺失/null/非法值区别。
+- [x] 对数值实现不依赖 long double 精度的范围/往返检查；对 Qt 容器递归调用严格读取；不支持目标编译期诊断。
+- [x] 验证失败保留 get_to_strict 输出，普通 get 回归不变；生成头文件。
+- [x] 更新记录并提交：`feat: 增加严格转换和字段读取接口`。
 
 ## Task 5: Packaging and documentation
 

@@ -223,3 +223,79 @@ TEST_CASE("Qt scalar and metadata boundaries")
     sBadTime["timeZoneId"] = "Invalid/TimeZone";
     CHECK_THROWS_AS(sBadTime.get<QDateTime>(), nlohmann::qt_error);
 }
+
+/** @brief 普通与严格数值路径的契约不同，严格读取精确保留边界。 */
+template<typename J>
+void CheckQtStrictNumbers()
+{
+    // 准备：每个边界均使用独立的 JSON 数值。
+    // 执行与断言。
+    CHECK(J(1.5).template get<int>() == 1);
+    CHECK_THROWS_AS(J(1.5).template get_strict<int>(), nlohmann::qt_error);
+    CHECK_THROWS_AS(J(1.0).template get_strict<int>(), nlohmann::qt_error);
+    CHECK_THROWS_AS(J(-1).template get_strict<unsigned>(), nlohmann::qt_error);
+    CHECK_THROWS_AS(J(256).template get_strict<unsigned char>(), nlohmann::qt_error);
+    CHECK_THROWS_AS(J(128).template get_strict<signed char>(), nlohmann::qt_error);
+    CHECK_THROWS_AS(J(-129).template get_strict<signed char>(), nlohmann::qt_error);
+    CHECK(J(255).template get_strict<unsigned char>() == 255);
+    CHECK(J(-128).template get_strict<signed char>() == -128);
+    CHECK(J((std::numeric_limits<qint64>::min)()).template get_strict<qint64>() == (std::numeric_limits<qint64>::min)());
+    CHECK(J((std::numeric_limits<quint64>::max)()).template get_strict<quint64>() == (std::numeric_limits<quint64>::max)());
+    CHECK_THROWS_AS(J((std::numeric_limits<quint64>::max)()).template get_strict<qint64>(), nlohmann::qt_error);
+    CHECK_THROWS_AS(J(std::uint64_t(9007199254740993ULL)).template get_strict<double>(), nlohmann::qt_error);
+    CHECK(J(std::uint64_t(9007199254740994ULL)).template get_strict<double>() == 9007199254740994.0);
+    CHECK(J(std::uint64_t(1) << 63).template get_strict<double>() == 9223372036854775808.0);
+    CHECK_THROWS_AS(J(0.1).template get_strict<float>(), nlohmann::qt_error);
+    CHECK(J(0.5).template get_strict<float>() == 0.5f);
+    CHECK_THROWS_AS(J(std::numeric_limits<double>::infinity()).template get_strict<double>(), nlohmann::qt_error);
+    CHECK_THROWS_AS(J(std::numeric_limits<double>::quiet_NaN()).template get_strict<double>(), nlohmann::qt_error);
+    CHECK_THROWS_AS(J((std::numeric_limits<double>::max)()).template get_strict<float>(), nlohmann::qt_error);
+}
+
+/** @brief 严格容器和字段读取补充路径，失败保留旧值。 */
+template<typename J>
+void CheckQtStrictFields()
+{
+    // 准备。
+    const J sJson{{"items", J::array({J{{"a/b~", J::array({1, 1.5})}}})}, {"null", nullptr}};
+    QList<int> lstOutput{99};
+    // 执行与断言。
+    CHECK_THROWS_AS(J::array({1, 1.5}).get_to_strict(lstOutput), nlohmann::qt_error);
+    CHECK(lstOutput == QList<int> {99});
+    J::array({1, 2}).get_to_strict(lstOutput);
+    CHECK(lstOutput == QList<int> {1, 2});
+    CHECK(sJson.template value_strict<int>(QStringLiteral("missing"), 7) == 7);
+    CHECK_THROWS_AS(sJson.template value_strict<int>(QStringLiteral("null"), 7), nlohmann::qt_error);
+    CHECK_THROWS_AS(sJson.template read_required<int>(QStringLiteral("/missing")), nlohmann::qt_error);
+    CHECK(sJson.template read_required<std::nullptr_t>(QStringLiteral("/null")) == nullptr);
+    CHECK_FALSE(sJson.template read_required<QVariant>(QStringLiteral("/null")).isValid());
+    CHECK_THROWS_AS(sJson.template read_required<int>(QStringLiteral("/items/00")), nlohmann::qt_error);
+    CHECK_THROWS_AS(sJson.template read_required<int>(QStringLiteral("/items/-")), nlohmann::qt_error);
+    CHECK_THROWS_AS(J(1).template get_strict<bool>(), nlohmann::qt_error);
+    CHECK(J(true).template get_strict<bool>());
+    const J sMap{{"a/b~", J::array({1, 2})}};
+    CHECK((sMap.template get_strict<QMap<QString, QVector<int>>>().value(QStringLiteral("a/b~")) == QVector<int> {1, 2}));
+    try
+    {
+        sJson.template read_required<QMap<QString, QList<int>>>(QStringLiteral("/items/0"));
+        FAIL("strict read must fail");
+    }
+    catch (const nlohmann::qt_error& sError)
+    {
+        CHECK(sError.category == nlohmann::qt_error_category::type);
+        CHECK(sError.path == QStringLiteral("/items/0/a~1b~0/1"));
+    }
+    catch (...)
+    {
+        FAIL("wrong exception type");
+    }
+    CHECK_THROWS_AS(J("bad").template get_strict<int>(), typename J::exception);
+}
+
+TEST_CASE("Qt strict conversions and fields")
+{
+    CheckQtStrictNumbers<nlohmann::json>();
+    CheckQtStrictNumbers<nlohmann::ordered_json>();
+    CheckQtStrictFields<nlohmann::json>();
+    CheckQtStrictFields<nlohmann::ordered_json>();
+}

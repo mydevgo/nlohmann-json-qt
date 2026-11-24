@@ -32,3 +32,11 @@
 - QSet 首轮编译暴露其没有双参数 insert；按序列追加与集合插入分别分派后通过。
 - `task3-ctest.log`：Qt 专项、conversions2、disabled_exceptions 和数据 fixture 共 4/4 通过，退出码 0。禁用异常专项验证的是原有标准接口，不承诺 Qt 错误路径可恢复。
 - 多头文件源已用锁定 AStyle 格式化，单头文件与 Bazel 文件清单已生成；单头文件完整验证仍在打包阶段执行。
+
+## Task 4：严格转换与字段
+
+- `get_strict/get_to_strict/read_required/value_strict` 覆盖整数符号与边界、float 拒绝、浮点精度、非有限值、嵌套 Qt 容器路径、null/缺失及失败保留输出。
+- 整数转浮点使用有效二进制位检查，覆盖 2^53+1 拒绝、2^53+2 接受和 2^63 精确接受，不依赖 MSVC long double 提供额外精度。
+- 首轮 Qt 专项 5 个用例、268 个断言通过；实例化无符号严格读取产生的 C4127 已通过等价边界比较消除。
+- `task4-ctest.log`：Qt、普通 conversions2、disabled_exceptions 和数据 fixture 共 4/4 通过。
+- 标准库容器及领域 ADL 不在严格目标白名单内；编译期负向验证在安装消费阶段执行。

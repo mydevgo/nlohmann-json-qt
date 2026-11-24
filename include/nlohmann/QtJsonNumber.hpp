@@ -34,7 +34,7 @@ T QtInteger(const J& sJson)
     const typename J::number_integer_t nValue = sJson.template get<typename J::number_integer_t>();
     if (nValue < 0)
     {
-        if (!std::numeric_limits<T>::is_signed || nValue < static_cast<typename J::number_integer_t>((std::numeric_limits<T>::lowest)()))
+        if (nValue < static_cast<typename J::number_integer_t>((std::numeric_limits<T>::lowest)()))
         {
             JSON_THROW(qt_error(qt_error_category::range));
         }

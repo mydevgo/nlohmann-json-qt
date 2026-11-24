@@ -89,6 +89,7 @@
 #include <nlohmann/QtJsonAdapters.hpp>
 #include <nlohmann/QtJsonVariant.hpp>
 #include <nlohmann/QtJsonBinary.hpp>
+#include <nlohmann/QtJsonStrict.hpp>
 
 #if defined(JSON_HAS_CPP_17)
     #if JSON_HAS_STATIC_RTTI
@@ -2806,6 +2807,41 @@ public:
                          const error_handler_t error_handler = error_handler_t::strict) const
     {
         return detail::QtDecode(dump(indent, indent_char, ensure_ascii, error_handler));
+    }
+
+    /** @brief 严格读取受支持类型，拒绝数值范围及精度损失。 */
+    template<typename T>
+    T get_strict() const
+    {
+        return detail::QtStrictRead<T>(*this);
+    }
+
+    /** @brief 完整转换后无异常交换，失败保留输出值。 */
+    template<typename T, detail::enable_if_t<noexcept(detail::QtStrictSwap(std::declval<T&>(), std::declval<T&>())), int> = 0>
+    T & get_to_strict(T& rOutput) const
+    {
+        T sTemporary = this->template get_strict<T>();
+        detail::QtStrictSwap(rOutput, sTemporary);
+        return rOutput;
+    }
+
+    /** @brief 按 RFC 6901 Pointer 严格读取必填字段。 */
+    template<typename T>
+    T read_required(const QString& strPointer) const
+    {
+        return detail::QtStrictRead<T>(detail::QtLocate(*this, strPointer), strPointer);
+    }
+
+    /** @brief 严格读取直接对象键，仅缺失时使用默认值。 */
+    template<typename T>
+    T value_strict(const QString& strKey, const T& sDefault) const
+    {
+        if (!is_object())
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        const auto it = find(detail::QtKey<string_t>(strKey));
+        return it == end() ? sDefault : detail::QtStrictRead<T>(it.value(), detail::QtToken(strKey));
     }
 
     /** @brief 将业务字节编码为 Base64 JSON string。 */
