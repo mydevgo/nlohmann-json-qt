@@ -48,10 +48,10 @@ Files: Qt adapter headers, `tests/src/unit-qt.cpp`, generated headers and BUILD.
 
 Interfaces: templated `adl_serializer` for Qt types, `encode_base64/decode_base64`。
 
-- [ ] 用例验证嵌套 QList/QVector/QSet/QMap/QHash、日期时间和时区、URL、UUID、QVariant 白名单、QJson 精度和 Base64 规范性；失败时输出不变。
-- [ ] 分别实现容器、业务值、QVariant、QJson 桥接与显式二进制接口，不接管领域 ADL。
-- [ ] 验证普通 QList<int> 从 `[1.5]` 读取为 1，裸 QByteArray 值转换在编译期不可用。
-- [ ] 生成头文件，运行 Qt 专项和转换回归；更新记录并提交：`feat: 支持 QtCore 值与容器转换`。
+- [x] 用例验证嵌套 QList/QVector/QSet/QMap/QHash、日期时间和时区、URL、UUID、QVariant 白名单、QJson 精度和 Base64 规范性；失败时输出不变。
+- [x] 分别实现容器、业务值、QVariant、QJson 桥接与显式二进制接口，不接管领域 ADL。
+- [x] 验证普通 QList<int> 从 `[1.5]` 读取为 1，裸 QByteArray 值转换在编译期不可用。
+- [x] 生成头文件，运行 Qt 专项和转换回归；更新记录并提交：`feat: 支持 QtCore 值与容器转换`。
 
 ## Task 4: Strict conversion
 

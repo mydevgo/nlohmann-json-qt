@@ -24,3 +24,11 @@
 - 使用仓库锁定的 AStyle 3.4.13 格式化变更源文件；生成 json/json_fwd/json_view 单头文件并更新 BUILD.bazel 清单。
 - Windows 下 amalgamate 的 `/` 与 `\\` 路径身份不一致会重复展开根头文件；已统一路径身份。生成命令使用 Python UTF-8 模式，避免本机 GBK 解码失败。
 - 单头文件的运行验证保留在打包阶段，不用多头文件测试代替。
+
+## Task 3：QtCore 值与容器
+
+- 已覆盖所有约定 Qt 类型、QString 键嵌套映射、QSet 去重、普通 QList<int> 小数截断、失败时保留容器输出、QVariant 各内置白名单投影、QJson 精度拒绝及 Base64 规范检查。
+- UTC、非零固定偏移、系统本地时间和 UTC 命名时区往返通过；未知时区和矛盾偏移被拒绝。
+- QSet 首轮编译暴露其没有双参数 insert；按序列追加与集合插入分别分派后通过。
+- `task3-ctest.log`：Qt 专项、conversions2、disabled_exceptions 和数据 fixture 共 4/4 通过，退出码 0。禁用异常专项验证的是原有标准接口，不承诺 Qt 错误路径可恢复。
+- 多头文件源已用锁定 AStyle 格式化，单头文件与 Bazel 文件清单已生成；单头文件完整验证仍在打包阶段执行。

@@ -87,6 +87,8 @@
 #include <nlohmann/ordered_map.hpp> // IWYU pragma: keep
 #include <nlohmann/thirdparty/hedley/hedley.hpp>
 #include <nlohmann/QtJsonAdapters.hpp>
+#include <nlohmann/QtJsonVariant.hpp>
+#include <nlohmann/QtJsonBinary.hpp>
 
 #if defined(JSON_HAS_CPP_17)
     #if JSON_HAS_STATIC_RTTI
@@ -2804,6 +2806,18 @@ public:
                          const error_handler_t error_handler = error_handler_t::strict) const
     {
         return detail::QtDecode(dump(indent, indent_char, ensure_ascii, error_handler));
+    }
+
+    /** @brief 将业务字节编码为 Base64 JSON string。 */
+    static basic_json encode_base64(const QByteArray& bytes)
+    {
+        return QString::fromLatin1(detail::QtBase64Encode(bytes));
+    }
+
+    /** @brief 将当前 Base64 JSON string 解码为业务字节。 */
+    QByteArray decode_base64() const
+    {
+        return detail::QtBase64Decode(this->template get<QString>());
     }
 
     /** @brief 使用严格 UTF-8 编码的 Qt 对象键。 */

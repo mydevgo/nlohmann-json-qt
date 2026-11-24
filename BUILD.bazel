@@ -19,7 +19,13 @@ cc_library(
     name = "json",
     hdrs = [
         "include/nlohmann/QtJsonAdapters.hpp",
+        "include/nlohmann/QtJsonBinary.hpp",
+        "include/nlohmann/QtJsonContainers.hpp",
+        "include/nlohmann/QtJsonNumber.hpp",
+        "include/nlohmann/QtJsonQJson.hpp",
         "include/nlohmann/QtJsonText.hpp",
+        "include/nlohmann/QtJsonValues.hpp",
+        "include/nlohmann/QtJsonVariant.hpp",
         "include/nlohmann/adl_serializer.hpp",
         "include/nlohmann/byte_container_with_subtype.hpp",
         "include/nlohmann/detail/abi_config.hpp",

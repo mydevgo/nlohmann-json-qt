@@ -40526,6 +40526,849 @@ struct adl_serializer<QByteArray>
 
 NLOHMANN_JSON_NAMESPACE_END
 
+// #include <nlohmann/QtJsonVariant.hpp>
+/**
+ * @file QtJsonVariant.hpp
+ * @brief QVariant 白名单投影，不自动恢复元类型。
+ * @author 黄凯
+ * @date 2026-11-24
+ * SPDX-License-Identifier: MIT
+ */
+
+// #include <nlohmann/QtJsonQJson.hpp>
+/**
+ * @file QtJsonQJson.hpp
+ * @brief Qt5 QJson 与精确整数 DOM 的显式精度检查桥接。
+ * @author 黄凯
+ * @date 2026-11-24
+ * SPDX-License-Identifier: MIT
+ */
+
+// #include <nlohmann/QtJsonValues.hpp>
+/**
+ * @file QtJsonValues.hpp
+ * @brief Qt 日期、时间、URL 和 UUID 值格式。
+ * @author 黄凯
+ * @date 2026-11-24
+ * SPDX-License-Identifier: MIT
+ */
+
+// #include <nlohmann/QtJsonContainers.hpp>
+/**
+ * @file QtJsonContainers.hpp
+ * @brief Qt 序列、集合和 QString 键映射的普通转换。
+ * @author 黄凯
+ * @date 2026-11-24
+ * SPDX-License-Identifier: MIT
+ */
+
+// #include <nlohmann/QtJsonAdapters.hpp>
+
+#include <QHash>
+#include <QList>
+#include <QMap>
+#include <QSet>
+#include <QStringList>
+#include <QVector>
+
+NLOHMANN_JSON_NAMESPACE_BEGIN
+namespace detail
+{
+/** @brief 序列追加元素，集合按自身去重语义插入。 */
+template<typename C>
+void QtAppend(C& rValues, const typename C::value_type& sValue)
+{
+    rValues.push_back(sValue);
+}
+template<typename T>
+void QtAppend(QSet<T>& rValues, const T& sValue)
+{
+    rValues.insert(sValue);
+}
+
+/** @brief 将容器元素错误加上路径，普通数值规则仍由 get 决定。 */
+template<typename T, typename J>
+T QtReadAt(const J& sJson, const QString& strPath)
+{
+    JSON_TRY { return sJson.template get<T>(); }
+    JSON_CATCH(const qt_error & sError)
+    {
+        JSON_THROW(QtPrepend(sError, strPath));
+    }
+    JSON_CATCH(const exception&)
+    {
+        JSON_THROW(qt_error(qt_error_category::type, strPath));
+    }
+}
+
+/** @brief 先生成元素节点再提交，附加容器路径。 */
+template<typename J, typename T>
+J QtWriteAt(const T& sValue, const QString& strPath)
+{
+    JSON_TRY { return J(sValue); }
+    JSON_CATCH(const qt_error & sError)
+    {
+        JSON_THROW(QtPrepend(sError, strPath));
+    }
+    JSON_CATCH(const exception&)
+    {
+        JSON_THROW(qt_error(qt_error_category::type, strPath));
+    }
+}
+
+template<typename C>
+struct CQtSequenceAdapter
+{
+    /** @brief 数组读取完成后提交，失败保留旧容器。 */
+    template<typename J>
+    static void from_json(const J& sJson, C& rOutput)
+    {
+        if (!sJson.is_array())
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        if (sJson.size() >= static_cast<std::size_t>((std::numeric_limits<int>::max)()))
+        {
+            JSON_THROW(qt_error(qt_error_category::range));
+        }
+        C sTemporary;
+        std::size_t nIndex = 0;
+        for (const J& sValue : sJson)
+        {
+            QtAppend(sTemporary, QtReadAt<typename C::value_type>(
+                         sValue, QStringLiteral("/") + QString::number(static_cast<qulonglong>(nIndex++))));
+        }
+        rOutput.swap(sTemporary);
+    }
+    /** @brief 按迭代顺序生成数组，成功后提交输出节点。 */
+    template<typename J>
+    static void to_json(J& rJson, const C& sValues)
+    {
+        J sTemporary = J::array();
+        std::size_t nIndex = 0;
+        for (const typename C::value_type& sValue : sValues)
+        {
+            sTemporary.push_back(QtWriteAt<J>(sValue, QStringLiteral("/") + QString::number(static_cast<qulonglong>(nIndex++))));
+        }
+        rJson.swap(sTemporary);
+    }
+};
+
+template<typename C, bool = std::is_same<typename C::key_type, QString>::value>
+struct CQtMapAdapter {};
+
+template<typename C>
+struct CQtMapAdapter<C, true>
+{
+    /** @brief 读取 QString 键映射，失败保留旧对象。 */
+    template<typename J>
+    static void from_json(const J& sJson, C& rOutput)
+    {
+        if (!sJson.is_object())
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        if (sJson.size() >= static_cast<std::size_t>((std::numeric_limits<int>::max)()))
+        {
+            JSON_THROW(qt_error(qt_error_category::range));
+        }
+        C sTemporary;
+        for (auto it = sJson.begin(); it != sJson.end(); ++it)
+        {
+            const QString strKey = QtDecode(it.key());
+            sTemporary.insert(strKey, QtReadAt<typename C::mapped_type>(it.value(), QtToken(strKey)));
+        }
+        rOutput.swap(sTemporary);
+    }
+    /** @brief 生成对象；不字符串化非 QString 键。 */
+    template<typename J>
+    static void to_json(J& rJson, const C& sValues)
+    {
+        J sTemporary = J::object();
+        for (auto it = sValues.cbegin(); it != sValues.cend(); ++it)
+        {
+            sTemporary[QtKey<typename J::string_t>(it.key())] = QtWriteAt<J>(it.value(), QtToken(it.key()));
+        }
+        rJson.swap(sTemporary);
+    }
+};
+}
+
+template<typename T> struct adl_serializer<QList<T>> : detail::CQtSequenceAdapter<QList<T>> {};
+template<typename T> struct adl_serializer<QVector<T>> : detail::CQtSequenceAdapter<QVector<T>> {};
+template<typename T> struct adl_serializer<QSet<T>> : detail::CQtSequenceAdapter<QSet<T>> {};
+template<> struct adl_serializer<QStringList> : detail::CQtSequenceAdapter<QStringList> {};
+template<typename K, typename V> struct adl_serializer<QMap<K, V>> : detail::CQtMapAdapter<QMap<K, V>> {};
+template<typename K, typename V> struct adl_serializer<QHash<K, V>> : detail::CQtMapAdapter<QHash<K, V>> {};
+NLOHMANN_JSON_NAMESPACE_END
+
+// #include <nlohmann/QtJsonNumber.hpp>
+/**
+ * @file QtJsonNumber.hpp
+ * @brief 不依赖 long double 扩展精度的数值范围及精度检查。
+ * @author 黄凯
+ * @date 2026-11-24
+ * SPDX-License-Identifier: MIT
+ */
+
+// #include <nlohmann/QtJsonText.hpp>
+
+#include <cmath>
+#include <cstdint>
+#include <type_traits>
+
+NLOHMANN_JSON_NAMESPACE_BEGIN
+namespace detail
+{
+/** @brief 严格读取整型；先比较边界，再执行不会越界的转换。 */
+template<typename T, typename J>
+T QtInteger(const J& sJson)
+{
+    if (!sJson.is_number_integer())
+    {
+        JSON_THROW(qt_error(qt_error_category::type));
+    }
+    if (sJson.is_number_unsigned())
+    {
+        const typename J::number_unsigned_t nValue = sJson.template get<typename J::number_unsigned_t>();
+        if (nValue > static_cast<typename J::number_unsigned_t>((std::numeric_limits<T>::max)()))
+        {
+            JSON_THROW(qt_error(qt_error_category::range));
+        }
+        return static_cast<T>(nValue);
+    }
+    const typename J::number_integer_t nValue = sJson.template get<typename J::number_integer_t>();
+    if (nValue < 0)
+    {
+        if (!std::numeric_limits<T>::is_signed || nValue < static_cast<typename J::number_integer_t>((std::numeric_limits<T>::lowest)()))
+        {
+            JSON_THROW(qt_error(qt_error_category::range));
+        }
+    }
+    else if (static_cast<typename J::number_unsigned_t>(nValue) > static_cast<typename J::number_unsigned_t>((std::numeric_limits<T>::max)()))
+    {
+        JSON_THROW(qt_error(qt_error_category::range));
+    }
+    return static_cast<T>(nValue);
+}
+
+/** @brief 判断整数的有效二进制位能否由目标浮点尾数精确保存。 */
+template<typename T>
+bool QtIntegerExact(std::uint64_t nMagnitude)
+{
+    if (nMagnitude == 0)
+    {
+        return true;
+    }
+    while ((nMagnitude & 1u) == 0)
+    {
+        nMagnitude >>= 1;
+    }
+    int nBits = 0;
+    while (nMagnitude != 0)
+    {
+        ++nBits;
+        nMagnitude >>= 1;
+    }
+    return nBits <= std::numeric_limits<T>::digits;
+}
+
+/** @brief 严格读取浮点，拒绝非有限值、溢出和精度损失。 */
+template<typename T, typename J>
+T QtFloat(const J& sJson)
+{
+    if (!sJson.is_number())
+    {
+        JSON_THROW(qt_error(qt_error_category::type));
+    }
+    if (sJson.is_number_integer())
+    {
+        std::uint64_t nMagnitude;
+        if (sJson.is_number_unsigned())
+        {
+            nMagnitude = sJson.template get<std::uint64_t>();
+        }
+        else
+        {
+            const std::int64_t nValue = sJson.template get<std::int64_t>();
+            nMagnitude = nValue < 0 ? static_cast<std::uint64_t>(-(nValue + 1)) + 1 : static_cast<std::uint64_t>(nValue);
+        }
+        if (!QtIntegerExact<T>(nMagnitude))
+        {
+            JSON_THROW(qt_error(qt_error_category::precision));
+        }
+        return sJson.template get<T>();
+    }
+    const typename J::number_float_t dValue = sJson.template get<typename J::number_float_t>();
+    if (!std::isfinite(dValue) || dValue > (std::numeric_limits<T>::max)() || dValue < -(std::numeric_limits<T>::max)())
+    {
+        JSON_THROW(qt_error(qt_error_category::range));
+    }
+    const T dResult = static_cast<T>(dValue);
+    if (static_cast<typename J::number_float_t>(dResult) != dValue)
+    {
+        JSON_THROW(qt_error(qt_error_category::precision));
+    }
+    return dResult;
+}
+}
+NLOHMANN_JSON_NAMESPACE_END
+
+#include <QDateTime>
+#include <QTimeZone>
+#include <QUrl>
+#include <QUuid>
+
+NLOHMANN_JSON_NAMESPACE_BEGIN
+namespace detail
+{
+/** @brief 业务值无效时报告脱敏转换错误。 */
+inline void QtRequireValue(bool bValid)
+{
+    if (!bValid)
+    {
+        JSON_THROW(qt_error(qt_error_category::value));
+    }
+}
+}
+
+template<> struct adl_serializer<QDate>
+{
+    /** @brief 写入规范 ISO 日期，拒绝无效值和非四位年份。 */
+    template<typename J> static void to_json(J& rJson, const QDate& sDate)
+    {
+        detail::QtRequireValue(sDate.isValid() && sDate.year() >= 1 && sDate.year() <= 9999);
+        rJson = sDate.toString(QStringLiteral("yyyy-MM-dd"));
+    }
+    /** @brief 严格解析并回验日期文本。 */
+    template<typename J> static void from_json(const J& sJson, QDate& rDate)
+    {
+        const QString strText = sJson.template get<QString>();
+        const QDate sDate = QDate::fromString(strText, QStringLiteral("yyyy-MM-dd"));
+        detail::QtRequireValue(sDate.isValid() && sDate.year() >= 1 && sDate.year() <= 9999 && sDate.toString(QStringLiteral("yyyy-MM-dd")) == strText);
+        rDate = sDate;
+    }
+};
+
+template<> struct adl_serializer<QTime>
+{
+    /** @brief 写入毫秒时间。 */
+    template<typename J> static void to_json(J& rJson, const QTime& sTime)
+    {
+        detail::QtRequireValue(sTime.isValid());
+        rJson = sTime.toString(QStringLiteral("HH:mm:ss.zzz"));
+    }
+    /** @brief 严格解析规范毫秒时间。 */
+    template<typename J> static void from_json(const J& sJson, QTime& rTime)
+    {
+        const QString strText = sJson.template get<QString>();
+        const QTime sTime = QTime::fromString(strText, QStringLiteral("HH:mm:ss.zzz"));
+        detail::QtRequireValue(sTime.isValid() && sTime.toString(QStringLiteral("HH:mm:ss.zzz")) == strText);
+        rTime = sTime;
+    }
+};
+
+template<> struct adl_serializer<QUrl>
+{
+    /** @brief 输出规范完整编码 URI，拒绝空 URL。 */
+    template<typename J> static void to_json(J& rJson, const QUrl& sUrl)
+    {
+        detail::QtRequireValue(sUrl.isValid() && !sUrl.isEmpty());
+        rJson = sUrl.toString(QUrl::FullyEncoded);
+    }
+    /** @brief StrictMode 解析并规范回验。 */
+    template<typename J> static void from_json(const J& sJson, QUrl& rUrl)
+    {
+        const QString strText = sJson.template get<QString>();
+        const QUrl sUrl(strText, QUrl::StrictMode);
+        detail::QtRequireValue(sUrl.isValid() && !sUrl.isEmpty() && sUrl.toString(QUrl::FullyEncoded) == strText);
+        rUrl = sUrl;
+    }
+};
+
+template<> struct adl_serializer<QUuid>
+{
+    /** @brief 写入小写无括号 UUID。 */
+    template<typename J> static void to_json(J& rJson, const QUuid& sUuid)
+    {
+        rJson = sUuid.toString(QUuid::WithoutBraces).toLower();
+    }
+    /** @brief 接受规范长度及大小写十六进制，零 UUID 合法。 */
+    template<typename J> static void from_json(const J& sJson, QUuid& rUuid)
+    {
+        const QString strText = sJson.template get<QString>();
+        const QUuid sUuid(strText);
+        detail::QtRequireValue(strText.size() == 36 && sUuid.toString(QUuid::WithoutBraces) == strText.toLower());
+        rUuid = sUuid;
+    }
+};
+
+template<> struct adl_serializer<QDateTime>
+{
+    /** @brief 保存可交叉校验的 Qt 日期时间对象。 */
+    template<typename J> static void to_json(J& rJson, const QDateTime& sDateTime)
+    {
+        detail::QtRequireValue(sDateTime.isValid());
+        const char* szSpec = sDateTime.timeSpec() == Qt::UTC ? "UTC" :
+                             sDateTime.timeSpec() == Qt::OffsetFromUTC ? "OffsetFromUTC" :
+                             sDateTime.timeSpec() == Qt::LocalTime ? "LocalTime" : "TimeZone";
+        J sTemporary{{"date", sDateTime.date()}, {"time", sDateTime.time()},
+            {"epochMilliseconds", sDateTime.toMSecsSinceEpoch()}, {"timeSpec", szSpec},
+            {"offsetSeconds", sDateTime.offsetFromUtc()}};
+        if (sDateTime.timeSpec() == Qt::LocalTime || sDateTime.timeSpec() == Qt::TimeZone)
+        {
+            const QByteArray bytesId = sDateTime.timeZone().id();
+            detail::QtRequireValue(!bytesId.isEmpty() && QTimeZone(bytesId).isValid());
+            sTemporary["timeZoneId"] = QString::fromUtf8(bytesId);
+        }
+        rJson.swap(sTemporary);
+    }
+    /** @brief 根据 epoch 恢复并校验所有墙上时间及时区字段。 */
+    template<typename J> static void from_json(const J& sJson, QDateTime& rDateTime)
+    {
+        if (!sJson.is_object())
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        const qint64 nEpoch = detail::QtInteger<qint64>(sJson.at("epochMilliseconds"));
+        const int nOffset = detail::QtInteger<int>(sJson.at("offsetSeconds"));
+        const QString strSpec = sJson.at("timeSpec").template get<QString>();
+        QDateTime sResult;
+        if (strSpec == QStringLiteral("UTC"))
+        {
+            sResult = QDateTime::fromMSecsSinceEpoch(nEpoch, Qt::UTC);
+        }
+        else if (strSpec == QStringLiteral("OffsetFromUTC"))
+        {
+            detail::QtRequireValue(nOffset != 0 && nOffset > -86400 && nOffset < 86400);
+            sResult = QDateTime::fromMSecsSinceEpoch(nEpoch, Qt::OffsetFromUTC, nOffset);
+        }
+        else
+        {
+            detail::QtRequireValue(strSpec == QStringLiteral("LocalTime") || strSpec == QStringLiteral("TimeZone"));
+            const QByteArray bytesId = detail::QtEncode(sJson.at("timeZoneId").template get<QString>());
+            const QTimeZone sZone(bytesId);
+            detail::QtRequireValue(sZone.isValid());
+            if (strSpec == QStringLiteral("LocalTime"))
+            {
+                detail::QtRequireValue(bytesId == QTimeZone::systemTimeZoneId());
+                sResult = QDateTime::fromMSecsSinceEpoch(nEpoch, Qt::LocalTime);
+            }
+            else
+            {
+                sResult = QDateTime::fromMSecsSinceEpoch(nEpoch, sZone);
+            }
+        }
+        detail::QtRequireValue(sResult.isValid() && sResult.toMSecsSinceEpoch() == nEpoch &&
+                               sResult.offsetFromUtc() == nOffset && sResult.date() == sJson.at("date").template get<QDate>() &&
+                               sResult.time() == sJson.at("time").template get<QTime>());
+        rDateTime.swap(sResult);
+    }
+};
+NLOHMANN_JSON_NAMESPACE_END
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
+
+NLOHMANN_JSON_NAMESPACE_BEGIN
+namespace detail
+{
+/** @brief 从 QJson 递归生成 DOM；Undefined 和非有限数不降级。 */
+template<typename J>
+J QtFromQJson(const QJsonValue& sValue)
+{
+    switch (sValue.type())
+    {
+        case QJsonValue::Null:
+            return nullptr;
+        case QJsonValue::Bool:
+            return sValue.toBool();
+        case QJsonValue::Double:
+            if (!std::isfinite(sValue.toDouble()))
+            {
+                JSON_THROW(qt_error(qt_error_category::range));
+            }
+            return sValue.toDouble();
+        case QJsonValue::String:
+            return sValue.toString();
+        case QJsonValue::Array:
+        {
+            J sArray = J::array();
+            const QJsonArray sValues = sValue.toArray();
+            int nIndex = 0;
+            for (const QJsonValue& sItem : sValues)
+            {
+                JSON_TRY { sArray.push_back(QtFromQJson<J>(sItem)); }
+                JSON_CATCH(const qt_error & sError)
+                {
+                    JSON_THROW(QtPrepend(sError, QStringLiteral("/") + QString::number(nIndex)));
+                }
+                ++nIndex;
+            }
+            return sArray;
+        }
+        case QJsonValue::Object:
+        {
+            J sObject = J::object();
+            const QJsonObject sValues = sValue.toObject();
+            for (auto it = sValues.begin(); it != sValues.end(); ++it)
+            {
+                sObject[QtKey<typename J::string_t>(it.key())] = QtWriteAt<J>(it.value(), QtToken(it.key()));
+            }
+            return sObject;
+        }
+        default:
+            JSON_THROW(qt_error(qt_error_category::value));
+    }
+}
+
+/** @brief 递归投影 QJson，拒绝 double 无法精确保存的整数。 */
+template<typename J>
+QJsonValue QtToQJson(const J& sJson)
+{
+    if (sJson.is_structured() && sJson.size() >= static_cast<std::size_t>((std::numeric_limits<int>::max)()))
+    {
+        JSON_THROW(qt_error(qt_error_category::range));
+    }
+    if (sJson.is_null())
+    {
+        return QJsonValue(QJsonValue::Null);
+    }
+    if (sJson.is_boolean())
+    {
+        return QJsonValue(sJson.template get<bool>());
+    }
+    if (sJson.is_number())
+    {
+        return QJsonValue(QtFloat<double>(sJson));
+    }
+    if (sJson.is_string())
+    {
+        return QJsonValue(sJson.template get<QString>());
+    }
+    if (sJson.is_array())
+    {
+        QJsonArray sArray;
+        std::size_t nIndex = 0;
+        for (const J& sItem : sJson)
+        {
+            JSON_TRY { sArray.append(QtToQJson(sItem)); }
+            JSON_CATCH(const qt_error & sError)
+            {
+                JSON_THROW(QtPrepend(sError, QStringLiteral("/") + QString::number(static_cast<qulonglong>(nIndex))));
+            }
+            ++nIndex;
+        }
+        return sArray;
+    }
+    if (sJson.is_object())
+    {
+        QJsonObject sObject;
+        for (auto it = sJson.begin(); it != sJson.end(); ++it)
+        {
+            const QString strKey = QtDecode(it.key());
+            JSON_TRY { sObject.insert(strKey, QtToQJson(it.value())); }
+            JSON_CATCH(const qt_error & sError)
+            {
+                JSON_THROW(QtPrepend(sError, QtToken(strKey)));
+            }
+        }
+        return sObject;
+    }
+    JSON_THROW(qt_error(qt_error_category::type));
+}
+}
+
+template<> struct adl_serializer<QJsonValue>
+{
+    /** @brief 转入 QJson 值，失败不提交。 */
+    template<typename J> static void from_json(const J& sJson, QJsonValue& rValue)
+    {
+        const QJsonValue sTemporary = detail::QtToQJson(sJson);
+        rValue = sTemporary;
+    }
+    /** @brief 转出 QJson 值，拒绝 Undefined。 */
+    template<typename J> static void to_json(J& rJson, const QJsonValue& sValue)
+    {
+        J sTemporary = detail::QtFromQJson<J>(sValue);
+        rJson.swap(sTemporary);
+    }
+};
+
+template<> struct adl_serializer<QJsonArray>
+{
+    /** @brief 只接受数组根节点。 */
+    template<typename J> static void from_json(const J& sJson, QJsonArray& rValue)
+    {
+        if (!sJson.is_array())
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        QJsonArray sTemporary = detail::QtToQJson(sJson).toArray();
+        rValue.swap(sTemporary);
+    }
+    /** @brief QJson 数组递归转为 DOM。 */
+    template<typename J> static void to_json(J& rJson, const QJsonArray& sValue)
+    {
+        adl_serializer<QJsonValue>::to_json(rJson, QJsonValue(sValue));
+    }
+};
+
+template<> struct adl_serializer<QJsonObject>
+{
+    /** @brief 只接受对象根节点。 */
+    template<typename J> static void from_json(const J& sJson, QJsonObject& rValue)
+    {
+        if (!sJson.is_object())
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        QJsonObject sTemporary = detail::QtToQJson(sJson).toObject();
+        rValue.swap(sTemporary);
+    }
+    /** @brief QJson 对象递归转为 DOM。 */
+    template<typename J> static void to_json(J& rJson, const QJsonObject& sValue)
+    {
+        adl_serializer<QJsonValue>::to_json(rJson, QJsonValue(sValue));
+    }
+};
+
+template<> struct adl_serializer<QJsonDocument>
+{
+    /** @brief 文档根只允许数组或对象。 */
+    template<typename J> static void from_json(const J& sJson, QJsonDocument& rValue)
+    {
+        QJsonDocument sTemporary;
+        if (sJson.is_array())
+        {
+            sTemporary = QJsonDocument(sJson.template get<QJsonArray>());
+        }
+        else if (sJson.is_object())
+        {
+            sTemporary = QJsonDocument(sJson.template get<QJsonObject>());
+        }
+        else
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        rValue.swap(sTemporary);
+    }
+    /** @brief 拒绝 null document，不猜测为 JSON null。 */
+    template<typename J> static void to_json(J& rJson, const QJsonDocument& sValue)
+    {
+        detail::QtRequireValue(!sValue.isNull());
+        if (sValue.isArray())
+        {
+            rJson = sValue.array();
+        }
+        else
+        {
+            rJson = sValue.object();
+        }
+    }
+};
+NLOHMANN_JSON_NAMESPACE_END
+
+#include <QVariant>
+
+NLOHMANN_JSON_NAMESPACE_BEGIN
+template<> struct adl_serializer<QVariant>
+{
+    /**
+     * @brief 按固定元类型白名单序列化。
+     * @details 协议分派集中保留，各类型复用已有值适配；拒绝隐式 canConvert 兜底。
+     */
+    template<typename J> static void to_json(J& rJson, const QVariant& sValue)
+    {
+        J sTemporary;
+        switch (sValue.userType())
+        {
+            case QMetaType::UnknownType:
+                sTemporary = nullptr;
+                break;
+            case QMetaType::Bool:
+                sTemporary = sValue.value<bool>();
+                break;
+            case QMetaType::Char:
+                sTemporary = sValue.value<char>();
+                break;
+            case QMetaType::SChar:
+                sTemporary = sValue.value<signed char>();
+                break;
+            case QMetaType::UChar:
+                sTemporary = sValue.value<unsigned char>();
+                break;
+            case QMetaType::Short:
+                sTemporary = sValue.value<short>();
+                break;
+            case QMetaType::UShort:
+                sTemporary = sValue.value<unsigned short>();
+                break;
+            case QMetaType::Int:
+                sTemporary = sValue.value<int>();
+                break;
+            case QMetaType::UInt:
+                sTemporary = sValue.value<unsigned int>();
+                break;
+            case QMetaType::Long:
+                sTemporary = sValue.value<long>();
+                break;
+            case QMetaType::ULong:
+                sTemporary = sValue.value<unsigned long>();
+                break;
+            case QMetaType::LongLong:
+                sTemporary = sValue.value<qlonglong>();
+                break;
+            case QMetaType::ULongLong:
+                sTemporary = sValue.value<qulonglong>();
+                break;
+            case QMetaType::Float:
+            case QMetaType::Double:
+                if (!std::isfinite(sValue.toDouble()))
+                {
+                    JSON_THROW(qt_error(qt_error_category::range));
+                }
+                sTemporary = sValue.toDouble();
+                break;
+            case QMetaType::QString:
+                sTemporary = sValue.value<QString>();
+                break;
+            case QMetaType::QChar:
+                sTemporary = sValue.value<QChar>();
+                break;
+            case QMetaType::QStringList:
+                sTemporary = sValue.value<QStringList>();
+                break;
+            case QMetaType::QVariantList:
+                sTemporary = sValue.value<QVariantList>();
+                break;
+            case QMetaType::QVariantMap:
+                sTemporary = sValue.value<QVariantMap>();
+                break;
+            case QMetaType::QVariantHash:
+                sTemporary = sValue.value<QVariantHash>();
+                break;
+            case QMetaType::QDate:
+                sTemporary = sValue.value<QDate>();
+                break;
+            case QMetaType::QTime:
+                sTemporary = sValue.value<QTime>();
+                break;
+            case QMetaType::QDateTime:
+                sTemporary = sValue.value<QDateTime>();
+                break;
+            case QMetaType::QUrl:
+                sTemporary = sValue.value<QUrl>();
+                break;
+            case QMetaType::QUuid:
+                sTemporary = sValue.value<QUuid>();
+                break;
+            case QMetaType::QJsonValue:
+                sTemporary = sValue.value<QJsonValue>();
+                break;
+            case QMetaType::QJsonArray:
+                sTemporary = sValue.value<QJsonArray>();
+                break;
+            case QMetaType::QJsonObject:
+                sTemporary = sValue.value<QJsonObject>();
+                break;
+            case QMetaType::QJsonDocument:
+                sTemporary = sValue.value<QJsonDocument>();
+                break;
+            default:
+                JSON_THROW(qt_error(qt_error_category::unsupported));
+        }
+        rJson.swap(sTemporary);
+    }
+
+    /** @brief 按 JSON 节点类型投影，拒绝 binary/discarded，不猜测领域元类型。 */
+    template<typename J> static void from_json(const J& sJson, QVariant& rValue)
+    {
+        QVariant sTemporary;
+        if (sJson.is_null()) {}
+        else if (sJson.is_boolean())
+        {
+            sTemporary = sJson.template get<bool>();
+        }
+        else if (sJson.is_number_unsigned())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<qulonglong>());
+        }
+        else if (sJson.is_number_integer())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<qlonglong>());
+        }
+        else if (sJson.is_number_float())
+        {
+            const double dValue = sJson.template get<double>();
+            if (!std::isfinite(dValue))
+            {
+                JSON_THROW(qt_error(qt_error_category::range));
+            }
+            sTemporary = dValue;
+        }
+        else if (sJson.is_string())
+        {
+            sTemporary = sJson.template get<QString>();
+        }
+        else if (sJson.is_array())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<QVariantList>());
+        }
+        else if (sJson.is_object())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<QVariantMap>());
+        }
+        else
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        rValue.swap(sTemporary);
+    }
+};
+NLOHMANN_JSON_NAMESPACE_END
+
+// #include <nlohmann/QtJsonBinary.hpp>
+/**
+ * @file QtJsonBinary.hpp
+ * @brief 规范 Base64 编解码，业务字节与文档字节显式区分。
+ * @author 黄凯
+ * @date 2026-11-24
+ * SPDX-License-Identifier: MIT
+ */
+
+// #include <nlohmann/QtJsonText.hpp>
+
+
+NLOHMANN_JSON_NAMESPACE_BEGIN
+namespace detail
+{
+/** @brief 编码前计算容量上限，避免 Qt5 int 溢出。 */
+inline QByteArray QtBase64Encode(const QByteArray& bytes)
+{
+    if (4 * ((static_cast<quint64>(bytes.size()) + 2) / 3) >= static_cast<quint64>((std::numeric_limits<int>::max)()))
+    {
+        JSON_THROW(qt_error(qt_error_category::range));
+    }
+    return bytes.toBase64();
+}
+
+/** @brief 解码后规范回验，拒绝空白、错误填充、非标准字母及非零尾部位。 */
+inline QByteArray QtBase64Decode(const QString& strText)
+{
+    const QByteArray bytesEncoded = QtEncode(strText);
+    const QByteArray::FromBase64Result sResult = QByteArray::fromBase64Encoding(bytesEncoded, QByteArray::AbortOnBase64DecodingErrors);
+    if (!sResult || sResult.decoded.toBase64() != bytesEncoded)
+    {
+        JSON_THROW(qt_error(qt_error_category::base64));
+    }
+    return sResult.decoded;
+}
+}
+NLOHMANN_JSON_NAMESPACE_END
+
 
 #if defined(JSON_HAS_CPP_17)
     #if JSON_HAS_STATIC_RTTI
@@ -43243,6 +44086,18 @@ public:
                          const error_handler_t error_handler = error_handler_t::strict) const
     {
         return detail::QtDecode(dump(indent, indent_char, ensure_ascii, error_handler));
+    }
+
+    /** @brief 将业务字节编码为 Base64 JSON string。 */
+    static basic_json encode_base64(const QByteArray& bytes)
+    {
+        return QString::fromLatin1(detail::QtBase64Encode(bytes));
+    }
+
+    /** @brief 将当前 Base64 JSON string 解码为业务字节。 */
+    QByteArray decode_base64() const
+    {
+        return detail::QtBase64Decode(this->template get<QString>());
     }
 
     /** @brief 使用严格 UTF-8 编码的 Qt 对象键。 */
