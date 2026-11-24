@@ -40730,22 +40730,22 @@ T QtInteger(const J& sJson)
     }
     if (sJson.is_number_unsigned())
     {
-        const typename J::number_unsigned_t nValue = sJson.template get<typename J::number_unsigned_t>();
-        if (nValue > static_cast<typename J::number_unsigned_t>((std::numeric_limits<T>::max)()))
+        const std::uintmax_t nValue = sJson.template get<std::uintmax_t>();
+        if (nValue > static_cast<std::uintmax_t>((std::numeric_limits<T>::max)()))
         {
             JSON_THROW(qt_error(qt_error_category::range));
         }
         return static_cast<T>(nValue);
     }
-    const typename J::number_integer_t nValue = sJson.template get<typename J::number_integer_t>();
+    const std::intmax_t nValue = sJson.template get<std::intmax_t>();
     if (nValue < 0)
     {
-        if (nValue < static_cast<typename J::number_integer_t>((std::numeric_limits<T>::lowest)()))
+        if (nValue < static_cast<std::intmax_t>((std::numeric_limits<T>::lowest)()))
         {
             JSON_THROW(qt_error(qt_error_category::range));
         }
     }
-    else if (static_cast<typename J::number_unsigned_t>(nValue) > static_cast<typename J::number_unsigned_t>((std::numeric_limits<T>::max)()))
+    else if (static_cast<std::uintmax_t>(nValue) > static_cast<std::uintmax_t>((std::numeric_limits<T>::max)()))
     {
         JSON_THROW(qt_error(qt_error_category::range));
     }
@@ -40829,6 +40829,44 @@ inline void QtRequireValue(bool bValid)
     {
         JSON_THROW(qt_error(qt_error_category::value));
     }
+}
+
+/** @brief 日期时间格式字段必须存在，错误携带字段路径。 */
+template<typename J>
+const J& QtValueField(const J& sJson, const char* szName)
+{
+    const auto it = sJson.find(szName);
+    if (it == sJson.end())
+    {
+        JSON_THROW(qt_error(qt_error_category::missing, QtToken(QString::fromLatin1(szName))));
+    }
+    return it.value();
+}
+
+/** @brief 元数据整数严格检查后加上字段路径。 */
+template<typename T, typename J>
+T QtValueRead(const J& sJson, const char* szName, std::true_type)
+{
+    const J& sField = QtValueField(sJson, szName);
+    JSON_TRY { return QtInteger<T>(sField); }
+    JSON_CATCH(const qt_error & sError)
+    {
+        JSON_THROW(QtPrepend(sError, QtToken(QString::fromLatin1(szName))));
+    }
+}
+
+/** @brief 非数值格式字段复用普通有效性检查。 */
+template<typename T, typename J>
+T QtValueRead(const J& sJson, const char* szName, std::false_type)
+{
+    return QtReadAt<T>(QtValueField(sJson, szName), QtToken(QString::fromLatin1(szName)));
+}
+
+/** @brief 日期时间协议字段的统一读取。 */
+template<typename T, typename J>
+T QtValueRead(const J& sJson, const char* szName)
+{
+    return QtValueRead<T>(sJson, szName, std::is_integral<T>());
 }
 }
 
@@ -40930,9 +40968,9 @@ template<> struct adl_serializer<QDateTime>
         {
             JSON_THROW(qt_error(qt_error_category::type));
         }
-        const qint64 nEpoch = detail::QtInteger<qint64>(sJson.at("epochMilliseconds"));
-        const int nOffset = detail::QtInteger<int>(sJson.at("offsetSeconds"));
-        const QString strSpec = sJson.at("timeSpec").template get<QString>();
+        const qint64 nEpoch = detail::QtValueRead<qint64>(sJson, "epochMilliseconds");
+        const int nOffset = detail::QtValueRead<int>(sJson, "offsetSeconds");
+        const QString strSpec = detail::QtValueRead<QString>(sJson, "timeSpec");
         QDateTime sResult;
         if (strSpec == QStringLiteral("UTC"))
         {
@@ -40946,7 +40984,7 @@ template<> struct adl_serializer<QDateTime>
         else
         {
             detail::QtRequireValue(strSpec == QStringLiteral("LocalTime") || strSpec == QStringLiteral("TimeZone"));
-            const QByteArray bytesId = detail::QtEncode(sJson.at("timeZoneId").template get<QString>());
+            const QByteArray bytesId = detail::QtEncode(detail::QtValueRead<QString>(sJson, "timeZoneId"));
             const QTimeZone sZone(bytesId);
             detail::QtRequireValue(sZone.isValid());
             if (strSpec == QStringLiteral("LocalTime"))
@@ -40960,8 +40998,8 @@ template<> struct adl_serializer<QDateTime>
             }
         }
         detail::QtRequireValue(sResult.isValid() && sResult.toMSecsSinceEpoch() == nEpoch &&
-                               sResult.offsetFromUtc() == nOffset && sResult.date() == sJson.at("date").template get<QDate>() &&
-                               sResult.time() == sJson.at("time").template get<QTime>());
+                               sResult.offsetFromUtc() == nOffset && sResult.date() == detail::QtValueRead<QDate>(sJson, "date") &&
+                               sResult.time() == detail::QtValueRead<QTime>(sJson, "time"));
         rDateTime.swap(sResult);
     }
 };
@@ -41182,6 +41220,58 @@ template<> struct adl_serializer<QVariant>
      */
     template<typename J> static void to_json(J& rJson, const QVariant& sValue)
     {
+        J sTemporary = _writeScalar<J>(sValue);
+        rJson.swap(sTemporary);
+    }
+
+    /** @brief 按 JSON 节点类型投影，拒绝 binary/discarded，不猜测领域元类型。 */
+    template<typename J> static void from_json(const J& sJson, QVariant& rValue)
+    {
+        QVariant sTemporary;
+        if (sJson.is_null()) {}
+        else if (sJson.is_boolean())
+        {
+            sTemporary = sJson.template get<bool>();
+        }
+        else if (sJson.is_number_unsigned())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<qulonglong>());
+        }
+        else if (sJson.is_number_integer())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<qlonglong>());
+        }
+        else if (sJson.is_number_float())
+        {
+            const double dValue = sJson.template get<double>();
+            if (!std::isfinite(dValue))
+            {
+                JSON_THROW(qt_error(qt_error_category::range));
+            }
+            sTemporary = dValue;
+        }
+        else if (sJson.is_string())
+        {
+            sTemporary = sJson.template get<QString>();
+        }
+        else if (sJson.is_array())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<QVariantList>());
+        }
+        else if (sJson.is_object())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<QVariantMap>());
+        }
+        else
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        rValue.swap(sTemporary);
+    }
+private:
+    /** @brief 标量元类型分派，复用普通 JSON 数值规则。 */
+    template<typename J> static J _writeScalar(const QVariant& sValue)
+    {
         J sTemporary;
         switch (sValue.userType())
         {
@@ -41232,6 +41322,18 @@ template<> struct adl_serializer<QVariant>
                 }
                 sTemporary = sValue.toDouble();
                 break;
+            default:
+                return _writeQtValue<J>(sValue);
+        }
+        return sTemporary;
+    }
+
+    /** @brief Qt 业务元类型白名单分派，拒绝隐式字符串兜底。 */
+    template<typename J> static J _writeQtValue(const QVariant& sValue)
+    {
+        J sTemporary;
+        switch (sValue.userType())
+        {
             case QMetaType::QString:
                 sTemporary = sValue.value<QString>();
                 break;
@@ -41280,53 +41382,9 @@ template<> struct adl_serializer<QVariant>
             default:
                 JSON_THROW(qt_error(qt_error_category::unsupported));
         }
-        rJson.swap(sTemporary);
+        return sTemporary;
     }
 
-    /** @brief 按 JSON 节点类型投影，拒绝 binary/discarded，不猜测领域元类型。 */
-    template<typename J> static void from_json(const J& sJson, QVariant& rValue)
-    {
-        QVariant sTemporary;
-        if (sJson.is_null()) {}
-        else if (sJson.is_boolean())
-        {
-            sTemporary = sJson.template get<bool>();
-        }
-        else if (sJson.is_number_unsigned())
-        {
-            sTemporary = QVariant::fromValue(sJson.template get<qulonglong>());
-        }
-        else if (sJson.is_number_integer())
-        {
-            sTemporary = QVariant::fromValue(sJson.template get<qlonglong>());
-        }
-        else if (sJson.is_number_float())
-        {
-            const double dValue = sJson.template get<double>();
-            if (!std::isfinite(dValue))
-            {
-                JSON_THROW(qt_error(qt_error_category::range));
-            }
-            sTemporary = dValue;
-        }
-        else if (sJson.is_string())
-        {
-            sTemporary = sJson.template get<QString>();
-        }
-        else if (sJson.is_array())
-        {
-            sTemporary = QVariant::fromValue(sJson.template get<QVariantList>());
-        }
-        else if (sJson.is_object())
-        {
-            sTemporary = QVariant::fromValue(sJson.template get<QVariantMap>());
-        }
-        else
-        {
-            JSON_THROW(qt_error(qt_error_category::type));
-        }
-        rValue.swap(sTemporary);
-    }
 };
 NLOHMANN_JSON_NAMESPACE_END
 

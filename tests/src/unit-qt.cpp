@@ -299,3 +299,43 @@ TEST_CASE("Qt strict conversions and fields")
     CheckQtStrictFields<nlohmann::json>();
     CheckQtStrictFields<nlohmann::ordered_json>();
 }
+
+TEST_CASE("Qt extended regression boundaries")
+{
+    // 准备。
+    typedef nlohmann::json J;
+    typedef nlohmann::basic_json<std::map, std::vector, std::string, bool, std::int32_t, std::uint32_t> SmallJ;
+    J sTime = QDateTime(QDate(2024, 1, 2), QTime(3, 4), Qt::UTC);
+    sTime.erase("epochMilliseconds");
+    int nCallbacks = 0;
+    const J::parser_callback_t sCallback = [&nCallbacks](int, J::parse_event_t, J&)
+    {
+        ++nCallbacks;
+        return true;
+    };
+    // 执行与断言。
+    CHECK(J::parse(QStringLiteral("[1]"), sCallback).is_array());
+    CHECK(nCallbacks > 0);
+    CHECK(SmallJ(-7).get_strict<qint64>() == -7);
+    CHECK(SmallJ(7u).get_strict<quint64>() == 7);
+    CHECK(J::array({1, 1, 2}).get_strict<QSet<int>>() == QSet<int> {1, 2});
+    CHECK(J::array({1, 2}).get_strict<QVector<int>>() == QVector<int> {1, 2});
+    CHECK((J{{"k", 3}}.get_strict<QHash<QString, int>>().value(QStringLiteral("k")) == 3));
+    CHECK_THROWS_AS(sTime.get<QDateTime>(), nlohmann::qt_error);
+    try
+    {
+        sTime.get<QDateTime>();
+    }
+    catch (const nlohmann::qt_error& sError)
+    {
+        CHECK(sError.category == nlohmann::qt_error_category::missing);
+        CHECK(sError.path == QStringLiteral("/epochMilliseconds"));
+    }
+    const J sInvalid = std::string("\xff", 1);
+    CHECK(sInvalid.dump_qstring(-1, ' ', false, J::error_handler_t::replace) == QStringLiteral("\"\ufffd\""));
+    CHECK(sInvalid.dump_qstring(-1, ' ', false, J::error_handler_t::ignore) == QStringLiteral("\"\""));
+    const QString strNulKey = QStringLiteral("a") + QChar(0) + QStringLiteral("b");
+    const J sNul{{strNulKey, 1}};
+    CHECK(sNul.at(strNulKey) == 1);
+    CHECK(sNul.begin().key_qstring() == strNulKey);
+}

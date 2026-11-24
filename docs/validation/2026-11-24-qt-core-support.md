@@ -40,3 +40,35 @@
 - 首轮 Qt 专项 5 个用例、268 个断言通过；实例化无符号严格读取产生的 C4127 已通过等价边界比较消除。
 - `task4-ctest.log`：Qt、普通 conversions2、disabled_exceptions 和数据 fixture 共 4/4 通过。
 - 标准库容器及领域 ADL 不在严格目标白名单内；编译期负向验证在安装消费阶段执行。
+
+## Task 5：交付验证
+
+### 配置与结果
+
+| 形式 | 配置 | 结果 |
+|---|---|---|
+| 多头文件 | C++11 Debug | 11 个专项及数据 fixture 共 12/12 通过 |
+| 多头文件 | C++20 Release | 10 个专项及数据 fixture 共 11/11 通过 |
+| 单头文件 | C++20 Release | 同样的 10 个专项及数据 fixture 共 11/11 通过 |
+| 安装多头文件消费方 | Debug，Qt 在前/JSON 在前/json_fwd 在前、多翻译单元 | 1/1 通过 |
+| 安装单头文件消费方 | Release，相同消费程序 | 1/1 通过 |
+
+专项为 Qt、constructor1/2、conversions2、deserialization、serialization、element_access1、iterators1、json_pointer、ordered_json；Debug 另含 disabled_exceptions。未运行完整上游测试全集。
+
+最后自查补充了自定义 32 位内部整数存储读取为 64 位严格目标、QDateTime 元数据缺失路径、callback、QSet/QVector/QHash 严格递归、NUL 对象键及 dump replace/ignore。范围比较改用 intmax_t/uintmax_t，防止目标边界被窄化；QDateTime 元数据改为带字段路径的受检读取。QVariant 长分派按标量与业务元类型拆分，投影规则不变。
+
+上述影响 Qt 功能的改动后，三种配置均重新构建 Qt 专项并通过 6 个用例、282 个断言；未受影响的上游专项复用对应配置已通过的结果。最终 Qt 专项日志为 `build-qt-multi/final-review-debug-test.log`、`build-qt-multi/final-review-release-test.log`、`build-qt-single/final-review-test.log`。原回归日志为两个构建目录中的 `final-*-ctest.log` / `final-ctest.log`，退出码均为 0。
+
+### 安装与负向编译
+
+- 安装目录为 `build-install-multi` / `build-install-single`，消费构建目录为 `build-consumer-multi` / `build-consumer-single`。
+- 消费方只链接 `nlohmann_json::nlohmann_json`，没有自行添加 Qt include、compile definitions 或 link libraries；包含顺序、默认 Qt 宏和领域 ADL 验证成功。
+- 两个消费配置的正向编译检查成功；`get_strict<std::vector<int>>()` 因不受支持目标的 static_assert 被拒绝，具有可抛出 ADL swap 的目标因没有可用 get_to_strict 重载被拒绝。CMakeConfigureLog.yaml 保留具体诊断。
+- Qt 运行 DLL 通过 PATH 显式提供，安装测试不声称部署了 Qt runtime。
+
+### 生成与边界
+
+- AStyle 版本按 `tools/astyle/requirements.txt` 锁定为 3.4.13；生成 json/json_fwd/json_view 及 Bazel 清单后再生成，SHA-256 无变化。
+- Qt 专项可执行文件 SHA-256 记录在 `build-qt-multi/final-binary-sha256.json`；构建输出保留在各 build 目录。
+- README 新增 fork 入口，产品使用说明在 `docs/QtCore.md`；测试与执行过程只在本记录及计划中保存。
+- 未修改 LibQtJson，未推送远端，未创建 PR。Qt6、其他操作系统/编译器、C++ modules、Bazel 实际构建和其他包管理器未验证。

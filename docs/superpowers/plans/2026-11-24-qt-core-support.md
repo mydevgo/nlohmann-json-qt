@@ -68,8 +68,8 @@ Interfaces: `get_strict<T>()`, `get_to_strict(T&)`, `read_required<T>(QString)`,
 
 Files: Qt usage docs, README entry, installed-consumer tests, validation record, generated headers。
 
-- [ ] C++11 Debug、C++20 Release、多头/单头专项和相关回归。
-- [ ] 包含顺序、多翻译单元、安装消费程序：`find_package(nlohmann_json CONFIG REQUIRED)` 后只链接 `nlohmann_json::nlohmann_json`。
-- [ ] 使用指南说明类型格式、错误、binary 语义、Qt5 与平台限制；不把任务过程写进产品说明。
-- [ ] 连续生成校验文件指纹一致，检查最终 diff、提交边界和剩余工作区。
-- [ ] 更新记录并提交：`docs: 完善 Qt 扩展用法和安装验证`。
+- [x] C++11 Debug、C++20 Release、多头/单头专项和相关回归。
+- [x] 包含顺序、多翻译单元、安装消费程序：`find_package(nlohmann_json CONFIG REQUIRED)` 后只链接 `nlohmann_json::nlohmann_json`。
+- [x] 使用指南说明类型格式、错误、binary 语义、Qt5 与平台限制；不把任务过程写进产品说明。
+- [x] 连续生成校验文件指纹一致，检查最终 diff、提交边界和剩余工作区。
+- [x] 更新记录并提交：`test: 完善 Qt 扩展回归与安装消费验证`。

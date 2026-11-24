@@ -18,6 +18,58 @@ template<> struct adl_serializer<QVariant>
      */
     template<typename J> static void to_json(J& rJson, const QVariant& sValue)
     {
+        J sTemporary = _writeScalar<J>(sValue);
+        rJson.swap(sTemporary);
+    }
+
+    /** @brief 按 JSON 节点类型投影，拒绝 binary/discarded，不猜测领域元类型。 */
+    template<typename J> static void from_json(const J& sJson, QVariant& rValue)
+    {
+        QVariant sTemporary;
+        if (sJson.is_null()) {}
+        else if (sJson.is_boolean())
+        {
+            sTemporary = sJson.template get<bool>();
+        }
+        else if (sJson.is_number_unsigned())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<qulonglong>());
+        }
+        else if (sJson.is_number_integer())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<qlonglong>());
+        }
+        else if (sJson.is_number_float())
+        {
+            const double dValue = sJson.template get<double>();
+            if (!std::isfinite(dValue))
+            {
+                JSON_THROW(qt_error(qt_error_category::range));
+            }
+            sTemporary = dValue;
+        }
+        else if (sJson.is_string())
+        {
+            sTemporary = sJson.template get<QString>();
+        }
+        else if (sJson.is_array())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<QVariantList>());
+        }
+        else if (sJson.is_object())
+        {
+            sTemporary = QVariant::fromValue(sJson.template get<QVariantMap>());
+        }
+        else
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        rValue.swap(sTemporary);
+    }
+  private:
+    /** @brief 标量元类型分派，复用普通 JSON 数值规则。 */
+    template<typename J> static J _writeScalar(const QVariant& sValue)
+    {
         J sTemporary;
         switch (sValue.userType())
         {
@@ -68,6 +120,18 @@ template<> struct adl_serializer<QVariant>
                 }
                 sTemporary = sValue.toDouble();
                 break;
+            default:
+                return _writeQtValue<J>(sValue);
+        }
+        return sTemporary;
+    }
+
+    /** @brief Qt 业务元类型白名单分派，拒绝隐式字符串兜底。 */
+    template<typename J> static J _writeQtValue(const QVariant& sValue)
+    {
+        J sTemporary;
+        switch (sValue.userType())
+        {
             case QMetaType::QString:
                 sTemporary = sValue.value<QString>();
                 break;
@@ -116,52 +180,8 @@ template<> struct adl_serializer<QVariant>
             default:
                 JSON_THROW(qt_error(qt_error_category::unsupported));
         }
-        rJson.swap(sTemporary);
+        return sTemporary;
     }
 
-    /** @brief 按 JSON 节点类型投影，拒绝 binary/discarded，不猜测领域元类型。 */
-    template<typename J> static void from_json(const J& sJson, QVariant& rValue)
-    {
-        QVariant sTemporary;
-        if (sJson.is_null()) {}
-        else if (sJson.is_boolean())
-        {
-            sTemporary = sJson.template get<bool>();
-        }
-        else if (sJson.is_number_unsigned())
-        {
-            sTemporary = QVariant::fromValue(sJson.template get<qulonglong>());
-        }
-        else if (sJson.is_number_integer())
-        {
-            sTemporary = QVariant::fromValue(sJson.template get<qlonglong>());
-        }
-        else if (sJson.is_number_float())
-        {
-            const double dValue = sJson.template get<double>();
-            if (!std::isfinite(dValue))
-            {
-                JSON_THROW(qt_error(qt_error_category::range));
-            }
-            sTemporary = dValue;
-        }
-        else if (sJson.is_string())
-        {
-            sTemporary = sJson.template get<QString>();
-        }
-        else if (sJson.is_array())
-        {
-            sTemporary = QVariant::fromValue(sJson.template get<QVariantList>());
-        }
-        else if (sJson.is_object())
-        {
-            sTemporary = QVariant::fromValue(sJson.template get<QVariantMap>());
-        }
-        else
-        {
-            JSON_THROW(qt_error(qt_error_category::type));
-        }
-        rValue.swap(sTemporary);
-    }
 };
 NLOHMANN_JSON_NAMESPACE_END

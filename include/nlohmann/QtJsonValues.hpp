@@ -24,6 +24,44 @@ inline void QtRequireValue(bool bValid)
         JSON_THROW(qt_error(qt_error_category::value));
     }
 }
+
+/** @brief 日期时间格式字段必须存在，错误携带字段路径。 */
+template<typename J>
+const J& QtValueField(const J& sJson, const char* szName)
+{
+    const auto it = sJson.find(szName);
+    if (it == sJson.end())
+    {
+        JSON_THROW(qt_error(qt_error_category::missing, QtToken(QString::fromLatin1(szName))));
+    }
+    return it.value();
+}
+
+/** @brief 元数据整数严格检查后加上字段路径。 */
+template<typename T, typename J>
+T QtValueRead(const J& sJson, const char* szName, std::true_type)
+{
+    const J& sField = QtValueField(sJson, szName);
+    JSON_TRY { return QtInteger<T>(sField); }
+    JSON_CATCH(const qt_error & sError)
+    {
+        JSON_THROW(QtPrepend(sError, QtToken(QString::fromLatin1(szName))));
+    }
+}
+
+/** @brief 非数值格式字段复用普通有效性检查。 */
+template<typename T, typename J>
+T QtValueRead(const J& sJson, const char* szName, std::false_type)
+{
+    return QtReadAt<T>(QtValueField(sJson, szName), QtToken(QString::fromLatin1(szName)));
+}
+
+/** @brief 日期时间协议字段的统一读取。 */
+template<typename T, typename J>
+T QtValueRead(const J& sJson, const char* szName)
+{
+    return QtValueRead<T>(sJson, szName, std::is_integral<T>());
+}
 }
 
 template<> struct adl_serializer<QDate>
@@ -124,9 +162,9 @@ template<> struct adl_serializer<QDateTime>
         {
             JSON_THROW(qt_error(qt_error_category::type));
         }
-        const qint64 nEpoch = detail::QtInteger<qint64>(sJson.at("epochMilliseconds"));
-        const int nOffset = detail::QtInteger<int>(sJson.at("offsetSeconds"));
-        const QString strSpec = sJson.at("timeSpec").template get<QString>();
+        const qint64 nEpoch = detail::QtValueRead<qint64>(sJson, "epochMilliseconds");
+        const int nOffset = detail::QtValueRead<int>(sJson, "offsetSeconds");
+        const QString strSpec = detail::QtValueRead<QString>(sJson, "timeSpec");
         QDateTime sResult;
         if (strSpec == QStringLiteral("UTC"))
         {
@@ -140,7 +178,7 @@ template<> struct adl_serializer<QDateTime>
         else
         {
             detail::QtRequireValue(strSpec == QStringLiteral("LocalTime") || strSpec == QStringLiteral("TimeZone"));
-            const QByteArray bytesId = detail::QtEncode(sJson.at("timeZoneId").template get<QString>());
+            const QByteArray bytesId = detail::QtEncode(detail::QtValueRead<QString>(sJson, "timeZoneId"));
             const QTimeZone sZone(bytesId);
             detail::QtRequireValue(sZone.isValid());
             if (strSpec == QStringLiteral("LocalTime"))
@@ -154,8 +192,8 @@ template<> struct adl_serializer<QDateTime>
             }
         }
         detail::QtRequireValue(sResult.isValid() && sResult.toMSecsSinceEpoch() == nEpoch &&
-                               sResult.offsetFromUtc() == nOffset && sResult.date() == sJson.at("date").template get<QDate>() &&
-                               sResult.time() == sJson.at("time").template get<QTime>());
+                               sResult.offsetFromUtc() == nOffset && sResult.date() == detail::QtValueRead<QDate>(sJson, "date") &&
+                               sResult.time() == detail::QtValueRead<QTime>(sJson, "time"));
         rDateTime.swap(sResult);
     }
 };

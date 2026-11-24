@@ -1,3 +1,12 @@
+# nlohmann-json-qt
+
+QtCore extension fork of nlohmann/json. Qt 5.15 Core is required; the header-only
+`nlohmann::json` API includes Qt values, QString keys, document input/output, and
+explicit strict conversions. See [QtCore usage and limits](docs/QtCore.md).
+
+The upstream project documentation follows. Its pure C++ dependency and platform
+claims describe upstream nlohmann/json; this fork's requirements are listed above.
+
 <a href="https://github.com/nlohmann/json/releases">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/mkdocs/docs/images/json-dark.svg">

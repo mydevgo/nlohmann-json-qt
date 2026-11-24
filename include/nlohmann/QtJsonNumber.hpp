@@ -24,22 +24,22 @@ T QtInteger(const J& sJson)
     }
     if (sJson.is_number_unsigned())
     {
-        const typename J::number_unsigned_t nValue = sJson.template get<typename J::number_unsigned_t>();
-        if (nValue > static_cast<typename J::number_unsigned_t>((std::numeric_limits<T>::max)()))
+        const std::uintmax_t nValue = sJson.template get<std::uintmax_t>();
+        if (nValue > static_cast<std::uintmax_t>((std::numeric_limits<T>::max)()))
         {
             JSON_THROW(qt_error(qt_error_category::range));
         }
         return static_cast<T>(nValue);
     }
-    const typename J::number_integer_t nValue = sJson.template get<typename J::number_integer_t>();
+    const std::intmax_t nValue = sJson.template get<std::intmax_t>();
     if (nValue < 0)
     {
-        if (nValue < static_cast<typename J::number_integer_t>((std::numeric_limits<T>::lowest)()))
+        if (nValue < static_cast<std::intmax_t>((std::numeric_limits<T>::lowest)()))
         {
             JSON_THROW(qt_error(qt_error_category::range));
         }
     }
-    else if (static_cast<typename J::number_unsigned_t>(nValue) > static_cast<typename J::number_unsigned_t>((std::numeric_limits<T>::max)()))
+    else if (static_cast<std::uintmax_t>(nValue) > static_cast<std::uintmax_t>((std::numeric_limits<T>::max)()))
     {
         JSON_THROW(qt_error(qt_error_category::range));
     }
