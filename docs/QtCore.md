@@ -1,5 +1,7 @@
 # QtCore 支持
 
+项目扩展总览、接口选择和源码职责见 [Qt 扩展点与使用说明](Qt扩展点与使用说明.md)。
+
 nlohmann-json-qt 是 nlohmann/json 的 QtCore 扩展 fork，保持 `nlohmann::json` 的操作方式、STL 内部存储和 header-only 结构。它是原版的替代品，同一程序内各模块必须统一使用此 fork 的头文件并重新编译。
 
 ## 依赖与接入
