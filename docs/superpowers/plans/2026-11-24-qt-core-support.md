@@ -37,10 +37,10 @@ Files: `include/nlohmann/QtJsonText.hpp`, `include/nlohmann/QtJsonAdapters.hpp`,
 
 Interfaces: strict UTF-16/UTF-8 helpers; `parse/accept(QString|QByteArray)`; `dump_utf8/dump_qstring`; QString object overloads; Pointer constructor; `key_qstring()`。
 
-- [ ] 添加 doctest 用例：QString 和 QByteArray 的 const/非 const 左值与右值、emoji、NUL、非法编码、allow_exceptions=false、QString 对象键及标准重载。
-- [ ] 构建用例确认缺失接口失败；实现文本辅助和 Qt 值适配分派，再实现成员、路径和迭代器入口。
-- [ ] 生成头文件，运行 Qt 专项与受影响基线；检查生成文件和清单同步。
-- [ ] 更新记录并提交：`feat: 原生支持 Qt 文本和对象操作`。
+- [x] 添加 doctest 用例：QString 和 QByteArray 的 const/非 const 左值与右值、emoji、NUL、非法编码、allow_exceptions=false、QString 对象键及标准重载。
+- [x] 构建用例确认缺失接口失败；实现文本辅助和 Qt 值适配分派，再实现成员、路径和迭代器入口。
+- [x] 生成头文件，运行 Qt 专项与受影响基线；检查生成文件和清单同步。
+- [x] 更新记录并提交：`feat: 原生支持 Qt 文本和对象操作`。
 
 ## Task 3: Qt value and container adapters
 

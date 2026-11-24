@@ -15,3 +15,12 @@
 - CMake 原 INTERFACE target 必需链接 Qt5::Core，安装配置查找 Qt5 Core，pkg-config 声明 Qt5Core >= 5.15。
 - configure 成功；构建接入及解析基线通过。
 - 安装消费、单头文件及新增 Qt 功能尚未在本阶段验证。
+
+## Task 2：Qt 文本与对象接口
+
+- Qt 文本专项：json/ordered_json、左右值输入、const 访问、QString 键/Pointer/迭代器、Unicode/NUL 和非法编码，共 2 个用例、65 个断言通过。
+- 首次回归编译发现 `find("x")` 在标准字符串和 QString 间产生歧义；Qt 对象键与 Pointer 构造改为仅匹配实际 QString 的受限模板。
+- 修正后 `task2-ctest.log`：10 个专项与数据 fixture 共 11/11 通过，退出码 0。
+- 使用仓库锁定的 AStyle 3.4.13 格式化变更源文件；生成 json/json_fwd/json_view 单头文件并更新 BUILD.bazel 清单。
+- Windows 下 amalgamate 的 `/` 与 `\\` 路径身份不一致会重复展开根头文件；已统一路径身份。生成命令使用 Python UTF-8 模式，避免本机 GBK 解码失败。
+- 单头文件的运行验证保留在打包阶段，不用多头文件测试代替。

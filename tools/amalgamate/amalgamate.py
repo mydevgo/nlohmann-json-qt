@@ -58,7 +58,7 @@ class Amalgamation(object):
         for search_dir in search_dirs:
             search_path = os.path.join(search_dir, file_path)
             if os.path.isfile(self.actual_path(search_path)):
-                return search_path
+                return os.path.normpath(search_path)
         return None
 
     def __init__(self, args):
@@ -270,8 +270,8 @@ class TranslationUnit(object):
         self._process_includes()
 
     def __init__(self, file_path, amalgamation, is_root):
-        self.file_path = file_path
-        self.file_dir = os.path.dirname(file_path)
+        self.file_path = os.path.normpath(file_path)
+        self.file_dir = os.path.dirname(self.file_path)
         self.amalgamation = amalgamation
         self.is_root = is_root
 

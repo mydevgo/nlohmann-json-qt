@@ -7,6 +7,7 @@
 // SPDX-License-Identifier: MIT
 
 #pragma once
+#include <nlohmann/QtJsonText.hpp>
 
 #include <iterator> // iterator, random_access_iterator_tag, bidirectional_iterator_tag, advance, next
 #include <type_traits> // conditional, is_const, remove_const
@@ -648,6 +649,11 @@ class iter_impl // NOLINT(cppcoreguidelines-special-member-functions,hicpp-speci
     @brief return the value of an iterator
     @pre The iterator is initialized; i.e. `m_object != nullptr`.
     */
+    QString key_qstring() const
+    {
+        return detail::QtDecode(key());
+    }
+
     reference value() const
     {
         return operator*();

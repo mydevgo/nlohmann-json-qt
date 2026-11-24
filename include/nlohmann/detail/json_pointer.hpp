@@ -27,6 +27,7 @@
 #include <vector> // vector
 
 #include <nlohmann/detail/exceptions.hpp>
+#include <nlohmann/QtJsonText.hpp>
 #include <nlohmann/detail/macro_scope.hpp>
 #include <nlohmann/detail/meta/cpp_future.hpp>
 #include <nlohmann/detail/meta/type_traits.hpp>
@@ -193,6 +194,12 @@ class json_pointer
     /// @sa https://json.nlohmann.me/api/json_pointer/json_pointer/
     explicit json_pointer(const string_t& s = "")
         : reference_tokens(split(s))
+    {}
+
+    /** @brief 从 Qt 文本构造 RFC 6901 Pointer。 */
+    template<typename T, detail::enable_if_t<std::is_same<detail::uncvref_t<T>, QString>::value, int> = 0>
+    explicit json_pointer(T && strPointer)
+        : json_pointer(detail::QtKey<string_t>(strPointer))
     {}
 
     /// @brief return a string representation of the JSON pointer

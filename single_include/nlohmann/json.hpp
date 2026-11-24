@@ -7160,6 +7160,148 @@ NLOHMANN_JSON_NAMESPACE_END
 // SPDX-License-Identifier: MIT
 
 
+// #include <nlohmann/QtJsonText.hpp>
+/**
+ * @file QtJsonText.hpp
+ * @brief Qt 文本的严格编码转换及扩展错误。
+ * @author 黄凯
+ * @date 2026-11-24
+ * SPDX-License-Identifier: MIT
+ */
+
+
+// #include <nlohmann/detail/exceptions.hpp>
+
+#include <QByteArray>
+#include <QString>
+#include <QTextCodec>
+#include <limits>
+#include <string>
+
+NLOHMANN_JSON_NAMESPACE_BEGIN
+
+/// Qt 扩展错误类别，不改变上游异常 ID。
+enum class qt_error_category
+{
+    encoding,          ///< 非法 UTF 编码
+    type,              ///< 节点类型错误
+    range,             ///< 数值或容器容量越界
+    precision,         ///< 数值不能精确表示
+    value,             ///< 业务值无效
+    missing,           ///< 字段缺失
+    null_value,        ///< 不允许 null
+    unsupported,       ///< QVariant 或目标类型不受支持
+    base64             ///< Base64 编码不规范
+};
+
+/// 可由 json::exception 捕获的 Qt 转换错误；消息不包含完整输入值。
+class qt_error : public detail::exception
+{
+  public:
+    const qt_error_category category; ///< 稳定错误类别
+    const QString path;              ///< RFC 6901 路径
+
+    /** @brief 构造脱敏错误，保留类别与路径。 */
+    explicit qt_error(qt_error_category eCategory, const QString& strPath = QString())
+        : detail::exception(600 + static_cast<int>(eCategory), "[json.exception.qt_error] Qt conversion failed"),
+          category(eCategory), path(strPath)
+    {}
+};
+
+namespace detail
+{
+/** @brief 校验 UTF-16；不替换孤立代理项。 */
+inline bool QtValidUtf16(const QString& strText)
+{
+    for (int i = 0; i < strText.size(); ++i)
+    {
+        const QChar sChar = strText.at(i);
+        if (sChar.isHighSurrogate())
+        {
+            if (++i >= strText.size() || !strText.at(i).isLowSurrogate())
+            {
+                return false;
+            }
+        }
+        else if (sChar.isLowSurrogate())
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** @brief 转为 UTF-8；编码错误抛出 qt_error。 */
+inline QByteArray QtEncode(const QString& strText)
+{
+    if (!QtValidUtf16(strText))
+    {
+        JSON_THROW(qt_error(qt_error_category::encoding));
+    }
+    // 在 Qt 的 int 容量边界前计算实际 UTF-8 长度。
+    quint64 nBytes = 0;
+    for (int i = 0; i < strText.size(); ++i)
+    {
+        const ushort nCode = strText.at(i).unicode();
+        if (QChar::isHighSurrogate(nCode))
+        {
+            nBytes += 4;
+            ++i;
+        }
+        else
+        {
+            nBytes += nCode < 0x80 ? 1 : nCode < 0x800 ? 2 : 3;
+        }
+    }
+    if (nBytes >= static_cast<quint64>((std::numeric_limits<int>::max)()))
+    {
+        JSON_THROW(qt_error(qt_error_category::range));
+    }
+    return strText.toUtf8();
+}
+
+/** @brief 按显式长度严格解码 UTF-8，保留 BOM 和内嵌 NUL。 */
+template<typename String>
+QString QtDecode(const String& strText)
+{
+    if (strText.size() >= static_cast<std::size_t>((std::numeric_limits<int>::max)()))
+    {
+        JSON_THROW(qt_error(qt_error_category::range));
+    }
+    QTextCodec::ConverterState sState(QTextCodec::IgnoreHeader);
+    const QString strResult = QTextCodec::codecForName("UTF-8")->toUnicode(
+                                  strText.data(), static_cast<int>(strText.size()), &sState);
+    if (sState.invalidChars != 0 || sState.remainingChars != 0)
+    {
+        JSON_THROW(qt_error(qt_error_category::encoding));
+    }
+    return strResult;
+}
+
+/** @brief 转为内部字符串类型，保留字节长度。 */
+template<typename String>
+String QtKey(const QString& strText)
+{
+    const QByteArray bytes = QtEncode(strText);
+    return String(bytes.constData(), static_cast<std::size_t>(bytes.size()));
+}
+
+/** @brief 转换异常加上父节点路径。 */
+inline qt_error QtPrepend(const qt_error& sError, const QString& strPrefix)
+{
+    return qt_error(sError.category, strPrefix + sError.path);
+}
+
+/** @brief 对象键转换为 RFC 6901 路径片段。 */
+inline QString QtToken(QString strKey)
+{
+    strKey.replace(QStringLiteral("~"), QStringLiteral("~0"));
+    strKey.replace(QStringLiteral("/"), QStringLiteral("~1"));
+    return QStringLiteral("/") + strKey;
+}
+}
+NLOHMANN_JSON_NAMESPACE_END
+
 
 #include <cstddef> // size_t
 #include <iterator> // forward_iterator_tag
@@ -7688,6 +7830,11 @@ template<typename IteratorType> class iteration_proxy_value
     }
 
     /// return value of the iterator
+    QString key_qstring() const
+    {
+        return detail::QtDecode(key());
+    }
+
     typename IteratorType::reference value() const
     {
         return anchor.value();
@@ -26090,6 +26237,8 @@ NLOHMANN_JSON_NAMESPACE_END
 // SPDX-License-Identifier: MIT
 
 
+// #include <nlohmann/QtJsonText.hpp>
+
 
 #include <iterator> // iterator, random_access_iterator_tag, bidirectional_iterator_tag, advance, next
 #include <type_traits> // conditional, is_const, remove_const
@@ -26738,6 +26887,11 @@ class iter_impl // NOLINT(cppcoreguidelines-special-member-functions,hicpp-speci
     @brief return the value of an iterator
     @pre The iterator is initialized; i.e. `m_object != nullptr`.
     */
+    QString key_qstring() const
+    {
+        return detail::QtDecode(key());
+    }
+
     reference value() const
     {
         return operator*();
@@ -26925,6 +27079,8 @@ NLOHMANN_JSON_NAMESPACE_END
 
 // #include <nlohmann/detail/exceptions.hpp>
 
+// #include <nlohmann/QtJsonText.hpp>
+
 // #include <nlohmann/detail/macro_scope.hpp>
 
 // #include <nlohmann/detail/meta/cpp_future.hpp>
@@ -27099,6 +27255,12 @@ class json_pointer
     /// @sa https://json.nlohmann.me/api/json_pointer/json_pointer/
     explicit json_pointer(const string_t& s = "")
         : reference_tokens(split(s))
+    {}
+
+    /** @brief 从 Qt 文本构造 RFC 6901 Pointer。 */
+    template<typename T, detail::enable_if_t<std::is_same<detail::uncvref_t<T>, QString>::value, int> = 0>
+    explicit json_pointer(T && strPointer)
+        : json_pointer(detail::QtKey<string_t>(strPointer))
     {}
 
     /// @brief return a string representation of the JSON pointer
@@ -40292,6 +40454,78 @@ NLOHMANN_JSON_NAMESPACE_END
 // IWYU pragma: keep
 // #include <nlohmann/thirdparty/hedley/hedley.hpp>
 
+// #include <nlohmann/QtJsonAdapters.hpp>
+/**
+ * @file QtJsonAdapters.hpp
+ * @brief Qt 文本值的原生 ADL 适配。
+ * @author 黄凯
+ * @date 2026-11-24
+ * SPDX-License-Identifier: MIT
+ */
+
+
+// #include <nlohmann/QtJsonText.hpp>
+
+// #include <nlohmann/adl_serializer.hpp>
+
+
+NLOHMANN_JSON_NAMESPACE_BEGIN
+
+template<>
+struct adl_serializer<QString>
+{
+    /** @brief 严格编码 QString；失败不修改输出节点。 */
+    template<typename J>
+    static void to_json(J& rJson, const QString& strText)
+    {
+        rJson = detail::QtKey<typename J::string_t>(strText);
+    }
+    /** @brief 严格解码 JSON string；失败不修改输出文本。 */
+    template<typename J>
+    static void from_json(const J& sJson, QString& rText)
+    {
+        if (!sJson.is_string())
+        {
+            JSON_THROW(qt_error(qt_error_category::type));
+        }
+        QString strTemporary = detail::QtDecode(sJson.template get_ref<const typename J::string_t&>());
+        rText.swap(strTemporary);
+    }
+};
+
+template<>
+struct adl_serializer<QChar>
+{
+    /** @brief 写入单个非代理 BMP 字符。 */
+    template<typename J>
+    static void to_json(J& rJson, QChar sChar)
+    {
+        if (sChar.isSurrogate())
+        {
+            JSON_THROW(qt_error(qt_error_category::encoding));
+        }
+        rJson = QString(sChar);
+    }
+    /** @brief 读取单个非代理 BMP 字符。 */
+    template<typename J>
+    static void from_json(const J& sJson, QChar& rChar)
+    {
+        const QString strText = sJson.template get<QString>();
+        if (strText.size() != 1 || strText.at(0).isSurrogate())
+        {
+            JSON_THROW(qt_error(qt_error_category::value));
+        }
+        rChar = strText.at(0);
+    }
+};
+
+// 字节必须由文档入口或显式 Base64 入口解释，不允许误识别成数字数组。
+template<>
+struct adl_serializer<QByteArray>
+{};
+
+NLOHMANN_JSON_NAMESPACE_END
+
 
 #if defined(JSON_HAS_CPP_17)
     #if JSON_HAS_STATIC_RTTI
@@ -42988,6 +43222,81 @@ public:
         }
 
         return result;
+    }
+
+    /** @brief 输出 UTF-8 字节；保持上游 dump 参数语义。 */
+    QByteArray dump_utf8(const int indent = -1, const char indent_char = ' ',
+                         const bool ensure_ascii = false,
+                         const error_handler_t error_handler = error_handler_t::strict) const
+    {
+        const string_t strOutput = dump(indent, indent_char, ensure_ascii, error_handler);
+        if (strOutput.size() >= static_cast<std::size_t>((std::numeric_limits<int>::max)()))
+        {
+            JSON_THROW(qt_error(qt_error_category::range));
+        }
+        return QByteArray(strOutput.data(), static_cast<int>(strOutput.size()));
+    }
+
+    /** @brief 输出严格解码的 Qt 文本，不改变原有 dump 返回类型。 */
+    QString dump_qstring(const int indent = -1, const char indent_char = ' ',
+                         const bool ensure_ascii = false,
+                         const error_handler_t error_handler = error_handler_t::strict) const
+    {
+        return detail::QtDecode(dump(indent, indent_char, ensure_ascii, error_handler));
+    }
+
+    /** @brief 使用严格 UTF-8 编码的 Qt 对象键。 */
+    template<typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    reference operator[](K && strKey)
+    {
+        return operator[](detail::QtKey<string_t>(strKey));
+    }
+    template<typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    const_reference operator[](K && strKey) const
+    {
+        return operator[](detail::QtKey<string_t>(strKey));
+    }
+    template<typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    reference at(K && strKey)
+    {
+        return at(detail::QtKey<string_t>(strKey));
+    }
+    template<typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    const_reference at(K && strKey) const
+    {
+        return at(detail::QtKey<string_t>(strKey));
+    }
+    template<typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    iterator find(K && strKey)
+    {
+        return find(detail::QtKey<string_t>(strKey));
+    }
+    template<typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    const_iterator find(K && strKey) const
+    {
+        return find(detail::QtKey<string_t>(strKey));
+    }
+    template<typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    bool contains(K && strKey) const
+    {
+        return contains(detail::QtKey<string_t>(strKey));
+    }
+    template<typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    size_type count(K && strKey) const
+    {
+        return count(detail::QtKey<string_t>(strKey));
+    }
+    template<typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    size_type erase(K && strKey)
+    {
+        return erase(detail::QtKey<string_t>(strKey));
+    }
+
+    /** @brief Qt 对象键读取，缺失时使用默认值。 */
+    template<typename T, typename K, detail::enable_if_t<std::is_same<detail::uncvref_t<K>, QString>::value, int> = 0>
+    T value(K && strKey, const T& sDefault) const
+    {
+        return value(detail::QtKey<string_t>(strKey), sDefault);
     }
 
     /// @brief return the type of the JSON value (explicit)
@@ -46311,15 +46620,62 @@ public:
 
     /// @brief deserialize from a compatible input
     /// @sa https://json.nlohmann.me/api/basic_json/parse/
-    template<typename InputType>
+    template < typename InputType, detail::enable_if_t <
+                   !std::is_same<detail::uncvref_t<InputType>, QString>::value &&
+                   !std::is_same<detail::uncvref_t<InputType>, QByteArray>::value, int > = 0 >
     JSON_HEDLEY_WARN_UNUSED_RESULT
-    static basic_json parse(InputType&& i,
+    static basic_json parse(InputType && i,
                             parser_callback_t cb = nullptr,
                             const bool allow_exceptions = true,
                             const bool ignore_comments = false,
                             const bool ignore_trailing_commas = false)
     {
         return parse_impl(detail::input_adapter(std::forward<InputType>(i)), std::move(cb), allow_exceptions, ignore_comments, ignore_trailing_commas);
+    }
+
+    /** @brief 按完整 Qt 字节范围解析，拒绝原始 NUL 和非法编码。 */
+    static basic_json parse(const QByteArray& bytes, parser_callback_t cb = nullptr,
+                            const bool allow_exceptions = true, const bool ignore_comments = false,
+                            const bool ignore_trailing_commas = false)
+    {
+        JSON_TRY
+        {
+            if (bytes.contains('\0'))
+            {
+                JSON_THROW(qt_error(qt_error_category::encoding));
+            }
+            detail::QtDecode(bytes);
+        }
+        JSON_CATCH(const qt_error&)
+        {
+            if (!allow_exceptions)
+            {
+                return basic_json(value_t::discarded);
+            }
+            JSON_THROW(parse_error::create(detail::exception_id::syntax_error, std::size_t(1),
+                                           "invalid Qt document encoding or raw NUL", nullptr));
+        }
+        return parse_impl(detail::input_adapter(bytes.constData(), bytes.constData() + bytes.size()),
+                          std::move(cb), allow_exceptions, ignore_comments, ignore_trailing_commas);
+    }
+
+    /** @brief 验证 UTF-16 后解析，遵循原生异常开关和 callback。 */
+    static basic_json parse(const QString& strText, parser_callback_t cb = nullptr,
+                            const bool allow_exceptions = true, const bool ignore_comments = false,
+                            const bool ignore_trailing_commas = false)
+    {
+        QByteArray bytes;
+        JSON_TRY { bytes = detail::QtEncode(strText); }
+        JSON_CATCH(const qt_error&)
+        {
+            if (!allow_exceptions)
+            {
+                return basic_json(value_t::discarded);
+            }
+            JSON_THROW(parse_error::create(detail::exception_id::syntax_error, std::size_t(1),
+                                           "invalid Qt document encoding", nullptr));
+        }
+        return parse(bytes, std::move(cb), allow_exceptions, ignore_comments, ignore_trailing_commas);
     }
 
     /// @brief deserialize from a pair of character iterators (or an iterator+sentinel pair, C++20 ranges support)
@@ -46354,13 +46710,43 @@ public:
 
     /// @brief check if the input is valid JSON
     /// @sa https://json.nlohmann.me/api/basic_json/accept/
-    template<typename InputType>
+    template < typename InputType, detail::enable_if_t <
+                   !std::is_same<detail::uncvref_t<InputType>, QString>::value &&
+                   !std::is_same<detail::uncvref_t<InputType>, QByteArray>::value, int > = 0 >
     JSON_HEDLEY_WARN_UNUSED_RESULT
-    static bool accept(InputType&& i,
+    static bool accept(InputType && i,
                        const bool ignore_comments = false,
                        const bool ignore_trailing_commas = false)
     {
         return accept_impl(detail::input_adapter(std::forward<InputType>(i)), ignore_comments, ignore_trailing_commas);
+    }
+
+    /** @brief 校验 Qt 文档，编码或语法无效时返回 false。 */
+    static bool accept(const QByteArray& bytes, const bool ignore_comments = false,
+                       const bool ignore_trailing_commas = false)
+    {
+        if (bytes.contains('\0'))
+        {
+            return false;
+        }
+        JSON_TRY { detail::QtDecode(bytes); }
+        JSON_CATCH(const qt_error&)
+        {
+            return false;
+        }
+        return accept_impl(detail::input_adapter(bytes.constData(), bytes.constData() + bytes.size()),
+                           ignore_comments, ignore_trailing_commas);
+    }
+
+    /** @brief 校验 UTF-16 Qt 文档，不替换非法代理项。 */
+    static bool accept(const QString& strText, const bool ignore_comments = false,
+                       const bool ignore_trailing_commas = false)
+    {
+        if (!detail::QtValidUtf16(strText))
+        {
+            return false;
+        }
+        return accept(detail::QtEncode(strText), ignore_comments, ignore_trailing_commas);
     }
 
     /// @brief check if the input is valid JSON (iterator pair, or iterator+sentinel pair for C++20 ranges support)

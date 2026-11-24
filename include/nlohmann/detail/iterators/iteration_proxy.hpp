@@ -7,6 +7,7 @@
 // SPDX-License-Identifier: MIT
 
 #pragma once
+#include <nlohmann/QtJsonText.hpp>
 
 #include <cstddef> // size_t
 #include <iterator> // forward_iterator_tag
@@ -131,6 +132,11 @@ template<typename IteratorType> class iteration_proxy_value
     }
 
     /// return value of the iterator
+    QString key_qstring() const
+    {
+        return detail::QtDecode(key());
+    }
+
     typename IteratorType::reference value() const
     {
         return anchor.value();
