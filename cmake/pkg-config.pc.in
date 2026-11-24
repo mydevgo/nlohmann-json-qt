@@ -2,6 +2,7 @@ prefix=@CMAKE_INSTALL_PREFIX@
 includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
 
 Name: @PROJECT_NAME@
+Requires: Qt5Core >= 5.15
 Description: JSON for Modern C++
 Version: @PROJECT_VERSION@
 Cflags: -I${includedir}@NLOHMANN_JSON_PKGCONFIG_CFLAGS@

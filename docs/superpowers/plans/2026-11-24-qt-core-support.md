@@ -21,15 +21,15 @@
 
 - [x] 检查分支和工作区，完成设计审阅。
 - [x] 记录任务、接口、验证方式和提交边界。
-- [ ] 提交设计与计划：`docs: 确认 QtCore 扩展设计与实施计划`。
+- [x] 提交设计与计划：`2db48bb89 docs: 确认 QtCore 扩展设计与实施计划`。
 
 ## Task 1: QtCore build integration
 
 Files: `CMakeLists.txt`, `cmake/config.cmake.in`, `cmake/pkg-config.pc.in`。
 
-- [ ] 使用 `find_package(Qt5 5.15 REQUIRED COMPONENTS Core)`，在原 INTERFACE target 链接 `Qt5::Core`，安装包调用 `find_dependency`，pkg-config 声明 `Requires: Qt5Core`。
-- [ ] 配置独立 build 目录，构建并运行转换、构造、解析、序列化、对象、迭代、Pointer 和 ordered_json 基线。
-- [ ] 记录结果、更新清单并提交：`build: 接入必需的 QtCore 依赖`。
+- [x] 使用 `find_package(Qt5 5.15 REQUIRED COMPONENTS Core)`，在原 INTERFACE target 链接 `Qt5::Core`，安装包调用 `find_dependency`，pkg-config 声明 `Requires: Qt5Core`。
+- [x] 配置独立 build 目录，构建并运行转换、构造、解析、序列化、对象、迭代、Pointer 和 ordered_json 基线。
+- [x] 记录结果、更新清单并提交：`build: 接入必需的 QtCore 依赖`。
 
 ## Task 2: Qt text and object interfaces
 

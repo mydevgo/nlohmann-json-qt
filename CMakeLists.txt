@@ -6,6 +6,9 @@ cmake_minimum_required(VERSION 3.5...4.0)
 ##
 project(nlohmann_json VERSION 3.12.0 LANGUAGES CXX)
 
+# QtCore 是本 fork 的必需依赖，由公开 target 传播到消费方。
+find_package(Qt5 5.15 REQUIRED COMPONENTS Core)
+
 ##
 ## MAIN_PROJECT CHECK
 ## determine if nlohmann_json is built as a subproject (using add_subdirectory) or if it is the main project
@@ -149,6 +152,8 @@ endif()
 ##
 add_library(${NLOHMANN_JSON_TARGET_NAME} INTERFACE)
 add_library(${PROJECT_NAME}::${NLOHMANN_JSON_TARGET_NAME} ALIAS ${NLOHMANN_JSON_TARGET_NAME})
+target_link_libraries(${NLOHMANN_JSON_TARGET_NAME} INTERFACE Qt5::Core)
+target_compile_options(${NLOHMANN_JSON_TARGET_NAME} INTERFACE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 if (${CMAKE_VERSION} VERSION_LESS "3.8.0")
     target_compile_features(${NLOHMANN_JSON_TARGET_NAME} INTERFACE cxx_range_for)
 else()
